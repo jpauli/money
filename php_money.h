@@ -26,6 +26,16 @@ extern zend_module_entry money_module_entry;
 
 #define PHP_MONEY_VERSION "0.1.0" /* Replace with version number for your extension */
 
+#define MONEY_PROP_AMOUNT "amount"
+#define MONEY_PROP_CURRENCY "currency"
+#define CURRENCY_PROP_CURRENCYCODE "currencyCode"
+
+#define MONEY_PROP_AMOUNT_WS MONEY_PROP_AMOUNT, sizeof(MONEY_PROP_AMOUNT) -1
+#define MONEY_PROP_CURRENCY_WS MONEY_PROP_CURRENCY, sizeof(MONEY_PROP_CURRENCY) -1
+#define CURRENCY_PROP_CURRENCYCODE_WS CURRENCY_PROP_CURRENCYCODE, sizeof(CURRENCY_PROP_CURRENCYCODE) -1
+
+#define TYPE_PAIR(t1,t2) (((t1) << 4) | (t2))
+
 #ifdef PHP_WIN32
 #	define PHP_MONEY_API __declspec(dllexport)
 #elif defined(__GNUC__) && __GNUC__ >= 4
@@ -39,6 +49,10 @@ extern zend_module_entry money_module_entry;
 #endif
 
 PHP_METHOD(Money, __construct);
+PHP_METHOD(Money, getAmount);
+PHP_METHOD(Money, getCurrency);
+
+PHP_METHOD(Currency, __construct);
 
 #ifdef ZTS
 #define MONEY_G(v) TSRMG(money_globals_id, zend_money_globals *, v)
