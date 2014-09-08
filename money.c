@@ -25,9 +25,10 @@
 #include "php.h"
 #include "php_ini.h"
 #include "ext/standard/info.h"
-#include "php_money.h"
 #include "ext/spl/spl_exceptions.h"
+#include "ext/standard/php_math.h"
 #include "Zend/zend_exceptions.h"
+#include "php_money.h"
 
 #if ZEND_MODULE_API_NO < 20131226
 #error "Please compile for PHP>=5.6"
@@ -36,19 +37,21 @@
 static zend_class_entry *money_ce, *currency_ce, *CurrencyMismatchException_ce;
 static zend_object_handlers money_object_handlers;
 
-ZEND_BEGIN_ARG_INFO(arginfo_money__construct, dummy)
-	ZEND_ARG_INFO(0, amount)
-	ZEND_ARG_INFO(0, currency)
-ZEND_END_ARG_INFO()
-
-ZEND_BEGIN_ARG_INFO(arginfo_currency__construct, dummy)
-	ZEND_ARG_INFO(0, currencyCode)
-ZEND_END_ARG_INFO()
-
 static const zend_function_entry money_functions[] = {
 		PHP_ME(Money, __construct, arginfo_money__construct, ZEND_ACC_PUBLIC)
-		PHP_ME(Money, getAmount, 0, ZEND_ACC_PUBLIC)
-		PHP_ME(Money, getCurrency, 0, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, getAmount,          0, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, getCurrency,        0, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, add,                arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, substract,          arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, negate,             0, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, multiply,           arginfo_money_multiply, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, compareTo,          arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, equals,             arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, greaterThan,        arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, greaterThanOrEqual, arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, lessThan,           arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, lessThanOrEqual,    arginfo_money_add, ZEND_ACC_PUBLIC)
+		PHP_ME(Money, extractPercentage,  arginfo_money_extractPercentage, ZEND_ACC_PUBLIC)
 		PHP_FE_END
 };
 
@@ -57,22 +60,150 @@ static const zend_function_entry currency_functions[] = {
 		PHP_FE_END
 };
 
-PHP_METHOD(Money, getAmount)
+PHP_METHOD(Money, extractPercentage)
 {
-	if (zend_parse_parameters_none() == FAILURE) {
+	long percentage;
+	double result;
+	zval *new_money_percentage, *amount, *new_money_subtotal;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "l", &percentage) == FAILURE) {
 		return;
 	}
+
+	ALLOC_INIT_ZVAL(new_money_percentage);ALLOC_INIT_ZVAL(new_money_subtotal);
+
+	amount = zend_read_property(money_ce, getThis(), MONEY_PROP_AMOUNT_WS, 0);
+	result = Z_LVAL_P(amount) / (100 + percentage) * percentage;
+
+	CREATE_NEW_MONEY_OBJ(new_money_percentage, zend_dval_to_lval(result), zend_read_property(money_ce, getThis(), MONEY_PROP_CURRENCY_WS, 0))
+
+	array_init(return_value);
+	add_assoc_zval(return_value, "percentage", new_money_percentage);
+
+	money_handler_do_operation(ZEND_SUB, new_money_subtotal, getThis(), new_money_percentage);
+
+	add_assoc_zval(return_value, "subtotal", new_money_subtotal);
+}
+
+PHP_METHOD(Money, lessThan)
+{
+	CHECK_MONEY_PARAMS
+
+	RETURN_BOOL(money_handler_compare_objects(getThis(), other_money) == -1);
+}
+
+PHP_METHOD(Money, lessThanOrEqual)
+{
+	int result;
+
+	CHECK_MONEY_PARAMS
+
+	result = money_handler_compare_objects(getThis(), other_money);
+
+	RETURN_BOOL(result == -1 || result == 0);
+}
+
+PHP_METHOD(Money, greaterThan)
+{
+	CHECK_MONEY_PARAMS
+
+	RETURN_BOOL(money_handler_compare_objects(getThis(), other_money) == 1);
+}
+
+PHP_METHOD(Money, greaterThanOrEqual)
+{
+	int result;
+
+	CHECK_MONEY_PARAMS
+
+	result = money_handler_compare_objects(getThis(), other_money);
+
+	RETURN_BOOL(result == 1 || result == 0);
+}
+
+PHP_METHOD(Money, equals)
+{
+	CHECK_MONEY_PARAMS
+
+	RETURN_BOOL(money_handler_compare_objects(getThis(), other_money) == 0);
+}
+
+PHP_METHOD(Money, compareTo)
+{
+	CHECK_MONEY_PARAMS
+
+	RETURN_LONG(money_handler_compare_objects(getThis(), other_money));
+}
+
+PHP_METHOD(Money, negate)
+{
+	zval sub_zval;
+
+	CHECK_NO_PARAMS
+
+	ZVAL_LONG(&sub_zval, 0);
+
+	object_init_ex(return_value, money_ce);
+
+	money_handler_do_operation(ZEND_SUB, return_value, &sub_zval, getThis());
+}
+
+PHP_METHOD(Money, add)
+{
+	CHECK_MONEY_PARAMS
+
+	object_init_ex(return_value, money_ce);
+
+	money_handler_do_operation(ZEND_ADD, return_value, getThis(), other_money);
+}
+
+PHP_METHOD(Money, substract)
+{
+	CHECK_MONEY_PARAMS
+
+	object_init_ex(return_value, money_ce);
+
+	money_handler_do_operation(ZEND_SUB, return_value, getThis(), other_money);
+}
+
+PHP_METHOD(Money, getAmount)
+{
+	CHECK_NO_PARAMS
 
 	RETURN_ZVAL_FAST(zend_read_property(Z_OBJCE_P(getThis()), getThis(), MONEY_PROP_AMOUNT_WS, 0));
 }
 
 PHP_METHOD(Money, getCurrency)
 {
-	if (zend_parse_parameters_none() == FAILURE) {
+	CHECK_NO_PARAMS
+
+	RETURN_ZVAL_FAST(zend_read_property(Z_OBJCE_P(getThis()), getThis(), MONEY_PROP_CURRENCY_WS, 0));
+}
+
+PHP_METHOD(Money, multiply)
+{
+	double factor;
+	volatile double dresult;
+	long rounding_mode = PHP_ROUND_HALF_UP, lresult;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "d|l", &factor, &rounding_mode) == FAILURE) {
 		return;
 	}
 
-	RETURN_ZVAL_FAST(zend_read_property(Z_OBJCE_P(getThis()), getThis(), MONEY_PROP_CURRENCY_WS, 0));
+	if (UNEXPECTED(rounding_mode < 0 || rounding_mode > PHP_ROUND_HALF_ODD)) {
+		zend_throw_exception(spl_ce_InvalidArgumentException, "$roundingMode must be a valid rounding mode (PHP_ROUND_*)", 0);
+		return;
+	}
+
+	dresult = _php_math_round(factor * Z_LVAL_P(zend_read_property(money_ce, getThis(), MONEY_PROP_AMOUNT_WS, 0)), 0, rounding_mode);
+	lresult = zend_dval_to_lval(dresult);
+
+	if (UNEXPECTED(lresult & LONG_SIGN_MASK)) {
+		zend_throw_exception(spl_ce_OverflowException, "Integer overflow", 0);
+		return;
+	}
+
+	CREATE_NEW_MONEY_OBJ(return_value, lresult, zend_read_property(money_ce, getThis(), MONEY_PROP_CURRENCY_WS, 0));
 }
 
 PHP_METHOD(Money, __construct)
@@ -119,7 +250,7 @@ PHP_METHOD(Currency, __construct)
 	zend_update_property_stringl(Z_OBJCE_P(getThis()), getThis(), CURRENCY_PROP_CURRENCYCODE_WS, currency_code, currency_code_len);
 }
 
-static int money_handler_compare_objects(zval *object1, zval *object2 TSRMLS_DC)
+static int money_handler_compare_objects(zval *object1, zval *object2)
 {
 	zval *amount1, *amount2, *currency1, *currency2;
 	long compare_result;
@@ -128,7 +259,7 @@ static int money_handler_compare_objects(zval *object1, zval *object2 TSRMLS_DC)
 	currency2 = zend_read_property(Z_OBJCE_P(object2), object2, MONEY_PROP_CURRENCY_WS, 0);
 
 	if ((compare_result = Z_OBJ_HANDLER_P(currency1, compare_objects)(currency1, currency2)) != 0) {
-		zend_throw_exception(CurrencyMismatchException_ce, "Currency dont match", 0);
+		zend_throw_exception(CurrencyMismatchException_ce, "Currencies don't match", 0);
 		return compare_result;
 	}
 
@@ -159,7 +290,7 @@ static int money_handler_do_operation(zend_uchar opcode, zval *result, zval *op1
 			currency2 = zend_read_property(Z_OBJCE_P(op2), op2, MONEY_PROP_CURRENCY_WS, 0);
 
 			if (Z_OBJ_HANDLER_P(currency1, compare_objects)(currency1, currency2) != 0) {
-				zend_throw_exception(CurrencyMismatchException_ce, "Currency dont match", 0);
+				zend_throw_exception(CurrencyMismatchException_ce, "Currencies don't match", 0);
 				ZVAL_NULL(result);
 				return SUCCESS;
 			}
@@ -211,9 +342,7 @@ static int money_handler_do_operation(zend_uchar opcode, zval *result, zval *op1
 	}
 
 success:
-	object_init_ex(result, money_ce);
-	zend_update_property_long(money_ce, result, MONEY_PROP_AMOUNT_WS, amount_result);
-	zend_update_property(money_ce, result, MONEY_PROP_CURRENCY_WS, currency_result);
+	CREATE_NEW_MONEY_OBJ(result, amount_result, currency_result);
 	return SUCCESS;
 }
 
@@ -238,7 +367,6 @@ PHP_MINIT_FUNCTION(money)
 
 	INIT_CLASS_ENTRY(money_tmp, "Money", money_functions);
 	money_ce = zend_register_internal_class(&money_tmp);
-	//money_ce->ce_flags |= ZEND_ACC_FINAL_CLASS;
 	money_ce->create_object = money_create_object;
 	zend_declare_property_long(money_ce, MONEY_PROP_AMOUNT, sizeof(MONEY_PROP_AMOUNT) -1, 0, ZEND_ACC_PRIVATE);
 	zend_declare_property_long(money_ce, MONEY_PROP_CURRENCY, sizeof(MONEY_PROP_CURRENCY) -1, 0, ZEND_ACC_PRIVATE);
@@ -261,6 +389,7 @@ PHP_MINFO_FUNCTION(money)
 {
 	php_info_print_table_start();
 	php_info_print_table_header(2, "money support", "enabled");
+	php_info_print_table_colspan_header(2, "Based on https://github.com/sebastianbergmann/money");
 	php_info_print_table_end();
 }
 

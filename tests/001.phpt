@@ -1,21 +1,32 @@
 --TEST--
-Check for money presence
+Check for money basics
 --SKIPIF--
 <?php if (!extension_loaded("money")) print "skip"; ?>
 --FILE--
 <?php 
-echo "money extension is available";
-/*
-	you can add regression tests for your extension here
+$m  = new Money(42, 'foo');
+$m1 = new Money(42, new Currency('foo'));
 
-  the output of your test code has to be equal to the
-  text in the --EXPECT-- section below for the tests
-  to pass, differences between the output and the
-  expected text are interpreted as failure
+try { $m2 = new Money(42, new stdclass); } catch (InvalidArgumentException $e) { }
+try { $m3 = new Money(42, []); } catch (InvalidArgumentException $e) { }
 
-	see php5/README.TESTING for further information on
-  writing regression tests
-*/
-?>
---EXPECT--
-money extension is available
+var_dump($m, $m1);
+--EXPECTF--
+object(Money)#%d (2) {
+  ["amount":"Money":private]=>
+  int(42)
+  ["currency":"Money":private]=>
+  object(Currency)#%d (1) {
+    ["currencyCode":"Currency":private]=>
+    string(3) "foo"
+  }
+}
+object(Money)#%d (2) {
+  ["amount":"Money":private]=>
+  int(42)
+  ["currency":"Money":private]=>
+  object(Currency)#%d (1) {
+    ["currencyCode":"Currency":private]=>
+    string(3) "foo"
+  }
+}
